@@ -104,17 +104,16 @@ class RNNPredictor(nn.Module):
         self.eval()
         predictions = []
         x = x_init.to(device)
-        hidden = None
 
         with torch.no_grad():
             for _ in range(n_steps):
-                out, hidden = self.forward(x, hidden)
-                pred = out[:, 0:1, :]           # (1, 1, output_size)
+                out, _ = self.forward(x, None)       # hidden zawsze None — jak w treningu
+                pred = out[:, 0:1, :]                # (1, 1, output_size)
                 predictions.append(pred.squeeze(0))  # (1, output_size)
                 # Przesuń okno – usuń pierwszy krok, dodaj predykcję
                 x = torch.cat([x[:, 1:, :], pred], dim=1)
 
-        return torch.cat(predictions, dim=0)    # (n_steps, output_size)
+        return torch.cat(predictions, dim=0)         # (n_steps, output_size)
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)

@@ -131,47 +131,51 @@ class TimeSeriesDataset(Dataset):
         y[i] = trajektoria[i+seq_len : i+seq_len+pred_len]  shape (pred_len, n_features)
     """
 
-    def __init__(self, trajectories, seq_len=50, pred_len=1, normalize=True):
-        self.seq_len = seq_len
-        self.pred_len = pred_len
-        self.samples_X = []
-        self.samples_y = []
+def __init__(self, trajectories, seq_len=50, pred_len=1, normalize=True,
+             mean=None, std=None):
+    self.seq_len = seq_len
+    self.pred_len = pred_len
+    self.samples_X = []
+    self.samples_y = []
 
-        # Normalizacja globalna (mean/std liczone po wszystkich trajektoriach)
-        if normalize:
+    if normalize:
+        if mean is not None and std is not None:
+            self.mean = mean
+            self.std  = std
+        else:
             all_data = np.concatenate(trajectories, axis=0)
             self.mean = all_data.mean(axis=0)
             self.std  = all_data.std(axis=0) + 1e-8
-        else:
-            self.mean = np.zeros(trajectories[0].shape[1])
-            self.std  = np.ones(trajectories[0].shape[1])
+    else:
+        self.mean = np.zeros(trajectories[0].shape[1])
+        self.std  = np.ones(trajectories[0].shape[1])
 
-        for traj in trajectories:
-            traj_norm = (traj - self.mean) / self.std
-            T = len(traj_norm)
-            for i in range(T - seq_len - pred_len + 1):
-                X = traj_norm[i : i + seq_len]
-                y = traj_norm[i + seq_len : i + seq_len + pred_len]
-                self.samples_X.append(X)
-                self.samples_y.append(y)
+    for traj in trajectories:
+        traj_norm = (traj - self.mean) / self.std
+        T = len(traj_norm)
+        for i in range(T - seq_len - pred_len + 1):
+            X = traj_norm[i : i + seq_len]
+            y = traj_norm[i + seq_len : i + seq_len + pred_len]
+            self.samples_X.append(X)
+            self.samples_y.append(y)
 
-        self.samples_X = np.array(self.samples_X, dtype=np.float32)
-        self.samples_y = np.array(self.samples_y, dtype=np.float32)
+    self.samples_X = np.array(self.samples_X, dtype=np.float32)
+    self.samples_y = np.array(self.samples_y, dtype=np.float32)
 
-    def __len__(self):
-        return len(self.samples_X)
+def __len__(self):
+    return len(self.samples_X)
 
-    def __getitem__(self, idx):
-        return (
-            torch.from_numpy(self.samples_X[idx]),
-            torch.from_numpy(self.samples_y[idx])
-        )
+def __getitem__(self, idx):
+    return (
+        torch.from_numpy(self.samples_X[idx]),
+        torch.from_numpy(self.samples_y[idx])
+    )
 
-    def denormalize(self, y_norm):
-        """Odwraca normalizację (tensor lub numpy)."""
-        mean = torch.tensor(self.mean, dtype=torch.float32)
-        std  = torch.tensor(self.std,  dtype=torch.float32)
-        return y_norm * std + mean
+def denormalize(self, y_norm):
+    """Odwraca normalizację (tensor lub numpy)."""
+    mean = torch.tensor(self.mean, dtype=torch.float32)
+    std  = torch.tensor(self.std,  dtype=torch.float32)
+    return y_norm * std + mean
 
 
 def build_dataloaders(system_name, seq_len=50, pred_len=1,
@@ -202,9 +206,8 @@ def build_dataloaders(system_name, seq_len=50, pred_len=1,
     val_traj   = trajectories[n_train:]
 
     train_ds = TimeSeriesDataset(train_traj, seq_len=seq_len, pred_len=pred_len)
-    val_ds   = TimeSeriesDataset(val_traj, seq_len=seq_len, pred_len=pred_len)
-    val_ds.mean = train_ds.mean
-    val_ds.std  = train_ds.std
+    val_ds   = TimeSeriesDataset(val_traj,   seq_len=seq_len, pred_len=pred_len,
+                                  mean=train_ds.mean, std=train_ds.std)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                               num_workers=0, pin_memory=True)
