@@ -131,51 +131,51 @@ class TimeSeriesDataset(Dataset):
         y[i] = trajektoria[i+seq_len : i+seq_len+pred_len]  shape (pred_len, n_features)
     """
 
-def __init__(self, trajectories, seq_len=50, pred_len=1, normalize=True,
-             mean=None, std=None):
-    self.seq_len = seq_len
-    self.pred_len = pred_len
-    self.samples_X = []
-    self.samples_y = []
+    def __init__(self, trajectories, seq_len=50, pred_len=1, normalize=True,
+                 mean=None, std=None):
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+        self.samples_X = []
+        self.samples_y = []
 
-    if normalize:
-        if mean is not None and std is not None:
-            self.mean = mean
-            self.std  = std
+        if normalize:
+            if mean is not None and std is not None:
+                self.mean = mean
+                self.std  = std
+            else:
+                all_data = np.concatenate(trajectories, axis=0)
+                self.mean = all_data.mean(axis=0)
+                self.std  = all_data.std(axis=0) + 1e-8
         else:
-            all_data = np.concatenate(trajectories, axis=0)
-            self.mean = all_data.mean(axis=0)
-            self.std  = all_data.std(axis=0) + 1e-8
-    else:
-        self.mean = np.zeros(trajectories[0].shape[1])
-        self.std  = np.ones(trajectories[0].shape[1])
+            self.mean = np.zeros(trajectories[0].shape[1])
+            self.std  = np.ones(trajectories[0].shape[1])
 
-    for traj in trajectories:
-        traj_norm = (traj - self.mean) / self.std
-        T = len(traj_norm)
-        for i in range(T - seq_len - pred_len + 1):
-            X = traj_norm[i : i + seq_len]
-            y = traj_norm[i + seq_len : i + seq_len + pred_len]
-            self.samples_X.append(X)
-            self.samples_y.append(y)
+        for traj in trajectories:
+            traj_norm = (traj - self.mean) / self.std
+            T = len(traj_norm)
+            for i in range(T - seq_len - pred_len + 1):
+                X = traj_norm[i : i + seq_len]
+                y = traj_norm[i + seq_len : i + seq_len + pred_len]
+                self.samples_X.append(X)
+                self.samples_y.append(y)
 
-    self.samples_X = np.array(self.samples_X, dtype=np.float32)
-    self.samples_y = np.array(self.samples_y, dtype=np.float32)
+        self.samples_X = np.array(self.samples_X, dtype=np.float32)
+        self.samples_y = np.array(self.samples_y, dtype=np.float32)
 
-def __len__(self):
-    return len(self.samples_X)
+    def __len__(self):
+        return len(self.samples_X)
 
-def __getitem__(self, idx):
-    return (
-        torch.from_numpy(self.samples_X[idx]),
-        torch.from_numpy(self.samples_y[idx])
-    )
+    def __getitem__(self, idx):
+        return (
+            torch.from_numpy(self.samples_X[idx]),
+            torch.from_numpy(self.samples_y[idx])
+        )
 
-def denormalize(self, y_norm):
-    """Odwraca normalizację (tensor lub numpy)."""
-    mean = torch.tensor(self.mean, dtype=torch.float32)
-    std  = torch.tensor(self.std,  dtype=torch.float32)
-    return y_norm * std + mean
+    def denormalize(self, y_norm):
+        """Odwraca normalizację (tensor lub numpy)."""
+        mean = torch.tensor(self.mean, dtype=torch.float32)
+        std  = torch.tensor(self.std,  dtype=torch.float32)
+        return y_norm * std + mean
 
 
 def build_dataloaders(system_name, seq_len=50, pred_len=1,
@@ -289,6 +289,6 @@ if __name__ == '__main__':
                     xlabel='x', ylabel="x'")
         plt.suptitle(name.replace('_', ' ').title())
         plt.tight_layout()
-        plt.savefig(f'/home/claude/projekt11/{name}_data_preview.png', dpi=120)
+        plt.savefig(f'{name}_data_preview.png', dpi=120)
         print(f"  Zapisano podgląd danych: {name}_data_preview.png")
     plt.show()
