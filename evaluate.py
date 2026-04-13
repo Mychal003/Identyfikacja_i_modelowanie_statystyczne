@@ -113,6 +113,7 @@ def plot_predictions(results, ground_truth, t, system_name,
                      seq_len=50, save_path=None):
     """
     Rysuje: szeregi czasowe x(t) i x'(t) + portret fazowy.
+    Dla logistic_map trzeci panel to błąd bezwzględny zamiast atraktora.
     """
     t_pred = t[seq_len: seq_len + len(ground_truth)]
     n = len(t_pred)
@@ -125,9 +126,6 @@ def plot_predictions(results, ground_truth, t, system_name,
         ylabel_xd  = 'xₙ₊₁'
         title_x    = 'xₙ vs krok'
         title_xd   = 'xₙ₊₁ vs krok'
-        title_ph   = 'Atraktor (xₙ vs xₙ₊₁)'
-        xlabel_ph  = 'xₙ'
-        ylabel_ph  = 'xₙ₊₁'
     else:
         gt_label   = 'ODE solver (ground truth)'
         xlabel_ts  = 't'
@@ -135,9 +133,6 @@ def plot_predictions(results, ground_truth, t, system_name,
         ylabel_xd  = "x'(t)"
         title_x    = 'Pozycja x(t)'
         title_xd   = "Prędkość x'(t)"
-        title_ph   = 'Portret fazowy'
-        xlabel_ph  = 'x'
-        ylabel_ph  = "x'"
 
     fig = plt.figure(figsize=(16, 10))
     fig.suptitle(f'Predykcja wielokrokowa – {system_name.replace("_", " ").title()}',
@@ -168,16 +163,28 @@ def plot_predictions(results, ground_truth, t, system_name,
     ax_xdot.set(xlabel=xlabel_ts, ylabel=ylabel_xd, title=title_xd)
     ax_xdot.legend(loc='upper right')
 
-    # --- Portret fazowy / atraktor ---
-    ax_phase.plot(ground_truth[:, 0], ground_truth[:, 1],
-                  color=COLORS['ground_truth'], lw=2, label=gt_label, zorder=3)
-    for model_name, pred in results.items():
-        ax_phase.plot(pred[:n, 0], pred[:n, 1],
-                      color=COLORS[model_name], lw=1.5,
-                      linestyle='--', label=model_name, alpha=0.85)
-    ax_phase.set(xlabel=xlabel_ph, ylabel=ylabel_ph, title=title_ph)
-    ax_phase.legend()
-    ax_phase.set_aspect('auto')
+    # --- Trzeci panel ---
+    if system_name == 'logistic_map':
+        # Błąd bezwzględny krok po kroku – czytelniejszy niż atraktor
+        steps = np.arange(n)
+        for model_name, pred in results.items():
+            err = np.abs(pred[:n, 0] - ground_truth[:n, 0])
+            ax_phase.plot(steps, err,
+                          color=COLORS[model_name], lw=2, label=model_name)
+        ax_phase.set(xlabel='krok predykcji', ylabel='|błąd| xₙ',
+                     title='Błąd bezwzględny xₙ')
+        ax_phase.legend()
+    else:
+        # Portret fazowy dla układów ciągłych
+        ax_phase.plot(ground_truth[:, 0], ground_truth[:, 1],
+                      color=COLORS['ground_truth'], lw=2, label=gt_label, zorder=3)
+        for model_name, pred in results.items():
+            ax_phase.plot(pred[:n, 0], pred[:n, 1],
+                          color=COLORS[model_name], lw=1.5,
+                          linestyle='--', label=model_name, alpha=0.85)
+        ax_phase.set(xlabel='x', ylabel="x'", title='Portret fazowy')
+        ax_phase.legend()
+        ax_phase.set_aspect('auto')
 
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
