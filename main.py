@@ -16,6 +16,7 @@ CUDA jest używane automatycznie jeśli dostępne.
 
 import os
 import torch
+import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -36,7 +37,7 @@ from evaluate import (
 
 CONFIG = {
     # Systemy do identyfikacji
-    'systems': ['van_der_pol', 'duffing', 'logistic_map'],
+    'systems': ['logistic_map'],
 
     # Hiperparametry sieci
     'hidden_size': 64,
@@ -55,7 +56,7 @@ CONFIG = {
     'n_predict': {
         'van_der_pol':  500,
         'duffing':      500,
-        'logistic_map': 200,   # chaos eksploduje szybko → krótszy horyzont
+        'logistic_map': 50,    # chaos eksploduje szybko → krótki horyzont
     },
 
     # Ścieżki zapisu
@@ -133,7 +134,6 @@ def main():
             histories[model_name] = history
 
             # ── 4. Finalna ewaluacja na walidacji ─────────────────
-            import torch.nn as nn
             _, final_metrics = eval_epoch(
                 model, val_loader, nn.MSELoss(), device
             )
