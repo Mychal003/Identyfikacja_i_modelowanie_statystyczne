@@ -36,7 +36,7 @@ from evaluate import (
 
 CONFIG = {
     # Systemy do identyfikacji
-    'systems': ['van_der_pol', 'duffing'],
+    'systems': ['van_der_pol', 'duffing', 'logistic_map'],
 
     # Hiperparametry sieci
     'hidden_size': 64,
@@ -44,20 +44,23 @@ CONFIG = {
     'dropout':     0.1,
 
     # Hiperparametry treningu
-    'seq_len':    50,     # długość okna wejściowego
-    'pred_len':   1,      # kroków predykcji na raz (1-krokowa predykcja + autoregresja)
+    'seq_len':    50,
+    'pred_len':   1,
     'batch_size': 64,
     'n_epochs':   300,
     'lr':         1e-3,
     'patience':   25,
 
-    # Ewaluacja
-    'n_predict':  500,    # kroków do przewidzenia w fazie testowej
+    # Ewaluacja – liczba kroków predykcji per system
+    'n_predict': {
+        'van_der_pol':  500,
+        'duffing':      500,
+        'logistic_map': 200,   # chaos eksploduje szybko → krótszy horyzont
+    },
 
     # Ścieżki zapisu
     'output_dir': 'wyniki',
 }
-
 
 def main():
     # Utwórz katalog na wyniki
@@ -161,7 +164,7 @@ def main():
             trajectories_val=val_trajs,
             t_val=t_val,
             seq_len=CONFIG['seq_len'],
-            n_predict=min(CONFIG['n_predict'], len(t_val) - CONFIG['seq_len'] - 1),
+            n_predict=min(CONFIG['n_predict'][system_name], len(t_val) - CONFIG['seq_len'] - 1),
             device=device,
         )
 

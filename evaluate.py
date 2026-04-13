@@ -117,43 +117,65 @@ def plot_predictions(results, ground_truth, t, system_name,
     t_pred = t[seq_len: seq_len + len(ground_truth)]
     n = len(t_pred)
 
+    # Etykiety zależne od systemu
+    if system_name == 'logistic_map':
+        gt_label   = 'Mapa logistyczna (ground truth)'
+        xlabel_ts  = 'n (krok)'
+        ylabel_x   = 'xₙ'
+        ylabel_xd  = 'xₙ₊₁'
+        title_x    = 'xₙ vs krok'
+        title_xd   = 'xₙ₊₁ vs krok'
+        title_ph   = 'Atraktor (xₙ vs xₙ₊₁)'
+        xlabel_ph  = 'xₙ'
+        ylabel_ph  = 'xₙ₊₁'
+    else:
+        gt_label   = 'ODE solver (ground truth)'
+        xlabel_ts  = 't'
+        ylabel_x   = 'x(t)'
+        ylabel_xd  = "x'(t)"
+        title_x    = 'Pozycja x(t)'
+        title_xd   = "Prędkość x'(t)"
+        title_ph   = 'Portret fazowy'
+        xlabel_ph  = 'x'
+        ylabel_ph  = "x'"
+
     fig = plt.figure(figsize=(16, 10))
     fig.suptitle(f'Predykcja wielokrokowa – {system_name.replace("_", " ").title()}',
                  fontsize=14, fontweight='bold')
     gs = gridspec.GridSpec(2, 3, figure=fig, hspace=0.4, wspace=0.35)
 
-    ax_x    = fig.add_subplot(gs[0, :2])
-    ax_xdot = fig.add_subplot(gs[1, :2])
+    ax_x     = fig.add_subplot(gs[0, :2])
+    ax_xdot  = fig.add_subplot(gs[1, :2])
     ax_phase = fig.add_subplot(gs[:, 2])
 
-    # --- Szereg x(t) ---
+    # --- Szereg x ---
     ax_x.plot(t_pred[:n], ground_truth[:, 0],
-              color=COLORS['ground_truth'], lw=2, label='ODE solver (ground truth)', zorder=3)
+              color=COLORS['ground_truth'], lw=2, label=gt_label, zorder=3)
     for model_name, pred in results.items():
         ax_x.plot(t_pred[:n], pred[:n, 0],
                   color=COLORS[model_name], lw=1.5,
                   linestyle='--', label=model_name, alpha=0.85)
-    ax_x.set(xlabel='t', ylabel='x(t)', title='Pozycja x(t)')
+    ax_x.set(xlabel=xlabel_ts, ylabel=ylabel_x, title=title_x)
     ax_x.legend(loc='upper right')
 
-    # --- Szereg x'(t) ---
+    # --- Szereg x' / x_{n+1} ---
     ax_xdot.plot(t_pred[:n], ground_truth[:, 1],
-                 color=COLORS['ground_truth'], lw=2, label='ODE solver', zorder=3)
+                 color=COLORS['ground_truth'], lw=2, label=gt_label, zorder=3)
     for model_name, pred in results.items():
         ax_xdot.plot(t_pred[:n], pred[:n, 1],
                      color=COLORS[model_name], lw=1.5,
                      linestyle='--', label=model_name, alpha=0.85)
-    ax_xdot.set(xlabel='t', ylabel="x'(t)", title="Prędkość x'(t)")
+    ax_xdot.set(xlabel=xlabel_ts, ylabel=ylabel_xd, title=title_xd)
     ax_xdot.legend(loc='upper right')
 
-    # --- Portret fazowy ---
+    # --- Portret fazowy / atraktor ---
     ax_phase.plot(ground_truth[:, 0], ground_truth[:, 1],
-                  color=COLORS['ground_truth'], lw=2, label='ODE solver', zorder=3)
+                  color=COLORS['ground_truth'], lw=2, label=gt_label, zorder=3)
     for model_name, pred in results.items():
         ax_phase.plot(pred[:n, 0], pred[:n, 1],
                       color=COLORS[model_name], lw=1.5,
                       linestyle='--', label=model_name, alpha=0.85)
-    ax_phase.set(xlabel='x', ylabel="x'", title='Portret fazowy')
+    ax_phase.set(xlabel=xlabel_ph, ylabel=ylabel_ph, title=title_ph)
     ax_phase.legend()
     ax_phase.set_aspect('auto')
 

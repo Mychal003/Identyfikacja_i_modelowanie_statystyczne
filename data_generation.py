@@ -86,6 +86,15 @@ def generate_dataset(system_name='van_der_pol', n_trajectories=20,
     trajectories : list of np.ndarray, każda shape (N, 2)
     t            : np.ndarray shape (N,)
     """
+    # Mapa logistyczna ma własny generator – obsłuż ją osobno
+    if system_name == 'logistic_map':
+        return generate_logistic_dataset(
+            n_trajectories=n_trajectories,
+            r=3.9,
+            n_steps=6000,
+            noise_std=noise_std
+        )
+
     rng = np.random.default_rng(42)
     trajectories = []
 
@@ -171,25 +180,29 @@ def build_dataloaders(system_name, seq_len=50, pred_len=1,
     Buduje DataLoadery treningowy i walidacyjny dla danego systemu.
     """
     print(f"\n[DATA] Generuję trajektorie dla systemu: {system_name.upper()}")
-    trajectories, t = generate_dataset(
-        system_name=system_name,
-        n_trajectories=30,
-        t_span=(0, 60),
-        dt=0.01,
-        noise_std=0.02   # mały szum – bardziej realistyczne dane
-    )
+
+    if system_name == 'logistic_map':
+        trajectories, t = generate_logistic_dataset(
+            n_trajectories=30,
+            r=3.9,
+            n_steps=6000,
+            noise_std=0.005
+        )
+    else:
+        trajectories, t = generate_dataset(
+            system_name=system_name,
+            n_trajectories=30,
+            t_span=(0, 60),
+            dt=0.01,
+            noise_std=0.02
+        )
+
     n_train = int(len(trajectories) * train_split)
     train_traj = trajectories[:n_train]
     val_traj   = trajectories[n_train:]
 
     train_ds = TimeSeriesDataset(train_traj, seq_len=seq_len, pred_len=pred_len)
-    val_ds   = TimeSeriesDataset(val_traj,   seq_len=seq_len, pred_len=pred_len,
-                                  normalize=False)
-    # Val używa tej samej normalizacji co train
-    val_ds.mean = train_ds.mean
-    val_ds.std  = train_ds.std
-    # Przeliczamy val z właściwą normalizacją
-    val_ds = TimeSeriesDataset(val_traj, seq_len=seq_len, pred_len=pred_len)
+    val_ds   = TimeSeriesDataset(val_traj, seq_len=seq_len, pred_len=pred_len)
     val_ds.mean = train_ds.mean
     val_ds.std  = train_ds.std
 
@@ -201,6 +214,62 @@ def build_dataloaders(system_name, seq_len=50, pred_len=1,
     print(f"  Próbki treningowe: {len(train_ds)}")
     print(f"  Próbki walidacyjne: {len(val_ds)}")
     return train_loader, val_loader, train_ds
+
+
+# ─────────────────────────────────────────────
+#  Odwzorowanie logistyczne (system dyskretny)
+# ─────────────────────────────────────────────
+
+def generate_logistic_map(r=3.9, n_steps=6000, x0=None, rng=None):
+    """
+    Iteruje mapę logistyczną: x_{n+1} = r * x_n * (1 - x_n)
+    
+    Zwraca trajektorię jako (N, 2): [x_n, x_{n+1}] – analogicznie
+    do [x, x'] w systemach ciągłych, co pozwala użyć tej samej
+    architektury sieci bez żadnych zmian.
+    
+    r   : parametr bifurkacji (3.57 < r ≤ 4.0 → chaos)
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
+    if x0 is None:
+        x0 = rng.uniform(0.1, 0.9)
+
+    xs = np.empty(n_steps)
+    xs[0] = x0
+    for i in range(1, n_steps):
+        xs[i] = r * xs[i-1] * (1.0 - xs[i-1])
+
+    # Stan: [x_n, x_{n+1}] – "pozycja" i "prędkość" w sensie mapy
+    states = np.stack([xs[:-1], xs[1:]], axis=1).astype(np.float32)
+    t = np.arange(len(states))
+    return t, states
+
+
+def generate_logistic_dataset(n_trajectories=30, r=3.9,
+                               n_steps=6000, noise_std=0.0):
+    """
+    Generuje zestaw trajektorii z losowymi x0.
+    Krótki transient (500 kroków) jest odrzucany.
+    """
+    rng = np.random.default_rng(42)
+    trajectories = []
+    transient = 500
+
+    for _ in range(n_trajectories):
+        x0 = rng.uniform(0.1, 0.9)
+        _, states = generate_logistic_map(r=r, n_steps=n_steps + transient,
+                                          x0=x0, rng=rng)
+        states = states[transient:]   # odrzuć transient
+
+        if noise_std > 0:
+            states += rng.normal(0, noise_std, size=states.shape).astype(np.float32)
+            states = np.clip(states, 0.0, 1.0)
+
+        trajectories.append(states)
+
+    t = np.arange(len(trajectories[0]))
+    return trajectories, t
 
 
 if __name__ == '__main__':
