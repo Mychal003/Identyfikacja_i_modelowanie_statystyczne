@@ -1,202 +1,146 @@
 """
 main.py
 =======
-Główny skrypt projektu nr 11:
-  "Identyfikacja nieliniowych systemów dynamicznych
-   z wykorzystaniem rekurencyjnych sieci neuronowych"
-
-Uruchomienie:
-    python main.py
-
-Wymagania:
-    pip install torch torchvision torchaudio scipy matplotlib numpy
-
-CUDA jest używane automatycznie jeśli dostępne.
+Eksperyment bifurkacyjny – mapa logistyczna dla różnych wartości r.
 """
 
 import os
 import torch
-import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 
-from data_generation import build_dataloaders, generate_dataset
+from data_generation import generate_logistic_dataset, TimeSeriesDataset
+from torch.utils.data import DataLoader
 from models import build_models
-from train import train_model, eval_epoch
-from evaluate import (
-    plot_learning_curves,
-    evaluate_multistep,
-    plot_predictions,
-    plot_error_horizon,
-    print_comparison_table
-)
-
-# ─────────────────────────────────────────────
-#  Konfiguracja
-# ─────────────────────────────────────────────
+from train import train_model
+from evaluate import evaluate_multistep, plot_predictions, plot_error_horizon
 
 CONFIG = {
-    # Systemy do identyfikacji
-    'systems': ['logistic_map'],
-
-    # Hiperparametry sieci
+    'r_values':   [3.5, 3.7, 3.8, 3.9, 4.0],
     'hidden_size': 64,
     'num_layers':  2,
     'dropout':     0.1,
-
-    # Hiperparametry treningu
-    'seq_len':    50,
-    'pred_len':   1,
-    'batch_size': 64,
-    'n_epochs':   300,
-    'lr':         1e-3,
-    'patience':   25,
-
-    # Ewaluacja – liczba kroków predykcji per system
-    'n_predict': {
-        'van_der_pol':  500,
-        'duffing':      500,
-        'logistic_map': 50,    # chaos eksploduje szybko → krótki horyzont
-    },
-
-    # Ścieżki zapisu
-    'output_dir': 'wyniki',
+    'seq_len':     50,
+    'n_epochs':    300,
+    'lr':          1e-3,
+    'patience':    25,
+    'n_predict':   200,
+    'output_dir':  'wyniki',
 }
 
+
 def main():
-    # Utwórz katalog na wyniki
     os.makedirs(CONFIG['output_dir'], exist_ok=True)
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"\n{'═'*60}")
-    print(f"  PROJEKT 11: Identyfikacja systemów dynamicznych (RNN)")
-    print(f"  Device: {device}")
-    if device.type == 'cuda':
-        print(f"  GPU: {torch.cuda.get_device_name(0)}")
-        print(f"  VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-    print(f"{'═'*60}")
-
     torch.manual_seed(42)
     np.random.seed(42)
 
-    all_results = {}
+    print(f"\n{'═'*60}")
+    print(f"  EKSPERYMENT: Mapa logistyczna – RMSE vs r")
+    print(f"  Device: {device}")
+    print(f"{'═'*60}")
 
-    for system_name in CONFIG['systems']:
-        print(f"\n{'▓'*60}")
-        print(f"  SYSTEM: {system_name.replace('_', ' ').upper()}")
-        print(f"{'▓'*60}")
+    results_per_r = {r: {} for r in CONFIG['r_values']}
 
-        # ── 1. Dane ──────────────────────────────────────────────
-        train_loader, val_loader, train_ds = build_dataloaders(
-            system_name=system_name,
-            seq_len=CONFIG['seq_len'],
-            pred_len=CONFIG['pred_len'],
-            batch_size=CONFIG['batch_size'],
+    for r in CONFIG['r_values']:
+        print(f"\n{'─'*50}")
+        print(f"  r = {r}")
+        print(f"{'─'*50}")
+
+        # ── Dane ──────────────────────────────────────────────
+        trajectories, t = generate_logistic_dataset(
+            n_trajectories=30, r=r, n_steps=6000, noise_std=0.005
         )
+        n_train    = int(len(trajectories) * 0.8)
+        train_traj = trajectories[:n_train]
+        val_traj   = trajectories[n_train:]
 
-        # Dane walidacyjne do predykcji wielokrokowej
-        val_trajs, t_val = generate_dataset(
-            system_name=system_name,
-            n_trajectories=5,
-            t_span=(0, 60),
-            dt=0.01
-        )
+        train_ds = TimeSeriesDataset(train_traj, seq_len=CONFIG['seq_len'], pred_len=1)
+        val_ds   = TimeSeriesDataset(val_traj,   seq_len=CONFIG['seq_len'], pred_len=1)
+        val_ds.mean, val_ds.std = train_ds.mean, train_ds.std
 
-        # ── 2. Modele ─────────────────────────────────────────────
+        train_loader = DataLoader(train_ds, batch_size=64, shuffle=True,  num_workers=0)
+        val_loader   = DataLoader(val_ds,   batch_size=64, shuffle=False, num_workers=0)
+
+        # ── Modele + trening ───────────────────────────────────
         models = build_models(
             input_size=2,
             hidden_size=CONFIG['hidden_size'],
             num_layers=CONFIG['num_layers'],
-            pred_len=CONFIG['pred_len'],
+            pred_len=1,
             dropout=CONFIG['dropout'],
         )
-
-        all_results[system_name] = {}
-        histories = {}
 
         for model_name, model in models.items():
             save_path = os.path.join(
                 CONFIG['output_dir'],
-                f"best_{system_name}_{model_name.lower()}.pt"
+                f"bifurc_r{r}_{model_name.lower()}.pt"
+            )
+            train_model(
+                model=model, train_loader=train_loader, val_loader=val_loader,
+                n_epochs=CONFIG['n_epochs'], lr=CONFIG['lr'],
+                patience=CONFIG['patience'], device=device, save_path=save_path
             )
 
-            # ── 3. Trening ────────────────────────────────────────
-            history = train_model(
-                model=model,
-                train_loader=train_loader,
-                val_loader=val_loader,
-                n_epochs=CONFIG['n_epochs'],
-                lr=CONFIG['lr'],
-                patience=CONFIG['patience'],
-                device=device,
-                save_path=save_path,
-            )
-            histories[model_name] = history
-
-            # ── 4. Finalna ewaluacja na walidacji ─────────────────
-            _, final_metrics = eval_epoch(
-                model, val_loader, nn.MSELoss(), device
-            )
-            all_results[system_name][model_name] = {
-                'history': history,
-                'metrics': final_metrics,
-                'model':   model,
-            }
-
-        # ── 5. Wykresy krzywych uczenia ───────────────────────────
-        plot_learning_curves(
-            histories=histories,
-            system_name=system_name,
-            save_path=os.path.join(
-                CONFIG['output_dir'],
-                f"{system_name}_learning_curves.png"
-            )
-        )
-
-        # ── 6. Predykcja wielokrokowa ─────────────────────────────
-        trained_models = {
-            name: data['model']
-            for name, data in all_results[system_name].items()
-        }
-        pred_results, ground_truth = evaluate_multistep(
-            models=trained_models,
+        # ── Predykcja wszystkich modeli naraz ──────────────────
+        all_preds, ground_truth = evaluate_multistep(
+            models=models,
             dataset=train_ds,
-            trajectories_val=val_trajs,
-            t_val=t_val,
+            trajectories_val=val_traj,
+            t_val=t,
             seq_len=CONFIG['seq_len'],
-            n_predict=min(CONFIG['n_predict'][system_name], len(t_val) - CONFIG['seq_len'] - 1),
+            n_predict=CONFIG['n_predict'],
             device=device,
         )
 
+        # ── RMSE per model ─────────────────────────────────────
+        n = min(len(next(iter(all_preds.values()))), len(ground_truth))
+        for model_name, pred in all_preds.items():
+            rmse = float(np.sqrt(np.mean((pred[:n] - ground_truth[:n])**2)))
+            results_per_r[r][model_name] = rmse
+            print(f"    {model_name}  RMSE = {rmse:.4f}")
+
+        # ── Wykresy dla danego r ───────────────────────────────
         plot_predictions(
-            results=pred_results,
+            results=all_preds,
             ground_truth=ground_truth,
-            t=t_val,
-            system_name=system_name,
+            t=t,
+            system_name='logistic_map',
             seq_len=CONFIG['seq_len'],
             save_path=os.path.join(
                 CONFIG['output_dir'],
-                f"{system_name}_predictions.png"
+                f"logistic_r{r}_predictions.png"
             )
         )
 
         plot_error_horizon(
-            results=pred_results,
+            results=all_preds,
             ground_truth=ground_truth,
-            system_name=system_name,
+            system_name='logistic_map',
             save_path=os.path.join(
                 CONFIG['output_dir'],
-                f"{system_name}_error_horizon.png"
+                f"logistic_r{r}_error_horizon.png"
             )
         )
 
-    # ── 7. Tabela porównawcza ─────────────────────────────────────
-    print_comparison_table(all_results)
+    # ── Wykres RMSE vs r ───────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(10, 5))
+    fig.suptitle('Mapa logistyczna – RMSE vs parametr r',
+                 fontsize=13, fontweight='bold')
 
-    print(f"\n  ✓  Wszystkie wyniki zapisane w katalogu: '{CONFIG['output_dir']}/'")
-    print(f"  Pliki PNG: krzywe uczenia, predykcje, błąd vs horyzont")
-    print(f"  Pliki .pt: najlepsze wagi modeli\n")
+    for model_name, color in [('LSTM', '#e63946'), ('GRU', '#457b9d')]:
+        rmses = [results_per_r[r][model_name] for r in CONFIG['r_values']]
+        ax.plot(CONFIG['r_values'], rmses, marker='o', color=color,
+                lw=2, label=model_name)
 
+    ax.set(xlabel='r', ylabel=f"RMSE ({CONFIG['n_predict']} kroków)",
+           xticks=CONFIG['r_values'])
+    ax.legend()
+    plt.tight_layout()
+
+    save_path = os.path.join(CONFIG['output_dir'], 'logistic_bifurcation_rmse.png')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"\n  Zapisano: {save_path}")
     plt.show()
 
 
